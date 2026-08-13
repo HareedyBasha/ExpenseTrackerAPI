@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type WalletHandler struct {
@@ -47,28 +48,39 @@ func (h *WalletHandler) DepositToWallet(c *gin.Context) {
 		return
 	}
 
-	wallet := model.Wallet{}
-	result := repository.RetrieveBy(h.DB, &wallet, "user_id", int(claims.UserID))
-	if result.Error != nil {
-		response.RespondError(c, http.StatusInternalServerError, result.Error)
-		return
-	}
+	var wallet model.Wallet
+	var transaction model.Transaction
 
-	wallet.Deposit(input.Amount)
+	err = h.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", claims.UserID).First(&wallet)
+		if result.Error != nil {
+			return result.Error
+		}
 
-	result = repository.UpdateBy(h.DB.Begin(), &model.Wallet{}, &wallet, "id", wallet.ID)
-	if result.Error != nil {
-		response.RespondError(c, http.StatusInternalServerError, result.Error)
-		return
-	}
+		wallet.Deposit(input.Amount)
 
-	transaction, err := service.NewTransaction(h.DB, wallet.ID, input.Amount, "deposit", input.Category, input.Note)
+		result = tx.Save(&wallet)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		transaction, err = service.NewTransaction(h.DB, wallet.ID, input.Amount, "deposit", input.Category, input.Note)
+		if err != nil {
+			return result.Error
+		}
+
+		result = h.DB.Create(&transaction)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		return nil
+	})
+
 	if err != nil {
 		response.RespondError(c, http.StatusInternalServerError, err)
 		return
 	}
-
-	result = h.DB.Create(&transaction)
 
 	response.RespondOK(c, gin.H{"user_id": wallet.UserID, "balance": wallet.Balance})
 }
@@ -85,31 +97,42 @@ func (h *WalletHandler) WithdrawFromWallet(c *gin.Context) {
 		return
 	}
 
-	wallet := model.Wallet{}
-	result := repository.RetrieveBy(h.DB, &wallet, "user_id", int(claims.UserID))
-	if result.Error != nil {
-		response.RespondError(c, http.StatusInternalServerError, result.Error)
-		return
-	}
+	var wallet model.Wallet
+	var transaction model.Transaction
 
-	err = wallet.Withdraw(input.Amount)
+	err = h.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", claims.UserID).First(&wallet)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		err = wallet.Withdraw(input.Amount)
+		if err != nil {
+			return err
+		}
+
+		result = tx.Save(&wallet)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		transaction, err = service.NewTransaction(h.DB, wallet.ID, input.Amount, "withdraw", input.Category, input.Note)
+		if err != nil {
+			return result.Error
+		}
+
+		result = h.DB.Create(&transaction)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		response.RespondError(c, http.StatusBadRequest, err)
+		response.RespondError(c, http.StatusInternalServerError, err)
 		return
 	}
-
-	result = repository.UpdateBy(h.DB.Begin(), &model.Wallet{}, &wallet, "id", wallet.ID)
-	if result.Error != nil {
-		response.RespondError(c, http.StatusInternalServerError, result.Error)
-		return
-	}
-
-	transaction, err := service.NewTransaction(h.DB, wallet.ID, input.Amount, "withdraw", input.Category, input.Note)
-	if err != nil {
-		response.RespondError(c, http.StatusInternalServerError, result.Error)
-	}
-
-	result = h.DB.Create(&transaction)
 
 	response.RespondOK(c, gin.H{"user_id": wallet.UserID, "balance": wallet.Balance})
 }
