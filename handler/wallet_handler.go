@@ -40,6 +40,7 @@ func (h *WalletHandler) DepositToWallet(c *gin.Context) {
 	claims, err, statusCode := claimsChecks(c)
 	if err != nil {
 		response.RespondError(c, statusCode, err)
+		return
 	}
 
 	input := model.InputTransaction{}
@@ -89,6 +90,7 @@ func (h *WalletHandler) WithdrawFromWallet(c *gin.Context) {
 	claims, err, statusCode := claimsChecks(c)
 	if err != nil {
 		response.RespondError(c, statusCode, err)
+		return
 	}
 
 	input := model.InputTransaction{}
@@ -135,6 +137,84 @@ func (h *WalletHandler) WithdrawFromWallet(c *gin.Context) {
 	}
 
 	response.RespondOK(c, gin.H{"user_id": wallet.UserID, "balance": wallet.Balance})
+}
+
+func (h *WalletHandler) TransferFromWallet(c *gin.Context) {
+	claims, err, statusCode := claimsChecks(c)
+	if err != nil {
+		response.RespondError(c, statusCode, err)
+		return
+	}
+
+	input := model.InputTransaction{}
+	if err = c.ShouldBindJSON(&input); err != nil {
+		response.RespondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	var giverWallet model.Wallet
+	var takerWallet model.Wallet
+	var takerUser model.User
+	var takerTransaction model.Transaction
+	var giverTransaction model.Transaction
+
+	err = h.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Where("username = ?", input.ToUser).First(&takerUser)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		result = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", claims.UserID).First(&giverWallet)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		result = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", takerUser.ID).First(&takerWallet)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		err = giverWallet.Withdraw(input.Amount)
+		if err != nil {
+			return err
+		}
+
+		takerWallet.Deposit(input.Amount)
+
+		result = tx.Save(&giverWallet)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		result = tx.Save(&takerWallet)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		takerTransaction, giverTransaction, err = service.NewTransferTransaction(tx, giverWallet.ID, takerWallet.ID, input.Amount, input.Category, input.Note)
+		if err != nil {
+			return err
+		}
+
+		result = tx.Create(&takerTransaction)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		result = tx.Create(&giverTransaction)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		response.RespondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	response.RespondOK(c, gin.H{"user_id": giverWallet.UserID, "balance": giverWallet.Balance})
 }
 
 func (h *WalletHandler) GetUserWallet(c *gin.Context) {

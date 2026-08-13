@@ -18,6 +18,7 @@ type Transaction struct {
 
 type InputTransaction struct {
 	Amount   uint   `json:"amount"`
+	ToUser   string `json:"to_user"`
 	Note     string `json:"note"`
 	Category string `json:"category"`
 }

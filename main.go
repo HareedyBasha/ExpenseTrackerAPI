@@ -30,19 +30,25 @@ func main() {
 		panic(err.Error())
 	}
 
-	walletHandler := handler.WalletHandler{DB: db}
 	userHandler := handler.UserHandler{DB: db}
+	walletHandler := handler.WalletHandler{DB: db}
+	transactionHandler := handler.TransactionHandler{DB: db}
 
 	// User handling
 	r.POST("/signup", userHandler.Signup)
 	r.POST("/login", userHandler.Login)
 
-	protected := r.Group("/wallet")
-	protected.Use(auth.AuthMiddleware())
+	walletGroup := r.Group("/wallet")
+	walletGroup.Use(auth.AuthMiddleware())
 
-	protected.POST("/deposit", walletHandler.DepositToWallet)
-	protected.POST("/withdraw", walletHandler.WithdrawFromWallet)
-	protected.GET("", walletHandler.GetUserWallet)
+	transactionGroup := r.Group("/transactions")
+	transactionGroup.Use(auth.AuthMiddleware())
+
+	walletGroup.POST("/deposit", walletHandler.DepositToWallet)
+	walletGroup.POST("/withdraw", walletHandler.WithdrawFromWallet)
+	walletGroup.POST("/transfer", walletHandler.TransferFromWallet)
+	walletGroup.GET("", walletHandler.GetUserWallet)
+	transactionGroup.GET("", transactionHandler.GetAllTransactions)
 
 	r.Run("127.0.0.1:8080")
 }
