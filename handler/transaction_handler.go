@@ -24,15 +24,35 @@ func (h *TransactionHandler) GetAllTransactions(c *gin.Context) {
 		return
 	}
 
-	page, err := strconv.Atoi(c.Query("page"))
+	var page, limit int
+
+	if c.Query("page") == "" {
+		page = 1
+	}
+
+	if c.Query("limit") == "" {
+		limit = 20
+	}
+
+	page, err = strconv.Atoi(c.Query("page"))
 	if err != nil {
-		response.RespondError(c, http.StatusBadRequest, gin.H{"couldn't parse \"page\"": err})
+		response.RespondError(c, http.StatusBadRequest, gin.H{"couldn't parse page": err})
 		return
 	}
 
-	limit, err := strconv.Atoi(c.Query("limit"))
+	limit, err = strconv.Atoi(c.Query("limit"))
 	if err != nil {
-		response.RespondError(c, http.StatusBadRequest, gin.H{"couldn't parse \"limit\"": err})
+		response.RespondError(c, http.StatusBadRequest, gin.H{"couldn't parse limit": err})
+		return
+	}
+
+	if page < 1 {
+		response.RespondError(c, http.StatusBadRequest, gin.H{"page": "must be >= 1"})
+		return
+	}
+
+	if limit < 1 || limit > 100 { // pick a sane max
+		response.RespondError(c, http.StatusBadRequest, gin.H{"limit": "must be between 1 and 100"})
 		return
 	}
 

@@ -157,18 +157,23 @@ func (h *WalletHandler) TransferFromWallet(c *gin.Context) {
 		return
 	}
 
+	var takerUser model.User
+	result := h.DB.Where("username = ?", input.ToUser).First(&takerUser)
+	if result.Error != nil {
+		response.RespondError(c, http.StatusNotFound, result.Error)
+		return
+	}
+
+	if claims.UserID == takerUser.ID {
+		response.RespondError(c, http.StatusUnprocessableEntity, gin.H{"cannot transfer to your own wallet": result.Error})
+		return
+	}
 	var giverWallet model.Wallet
 	var takerWallet model.Wallet
-	var takerUser model.User
 	var takerTransaction model.Transaction
 	var giverTransaction model.Transaction
 
 	err = h.DB.Transaction(func(tx *gorm.DB) error {
-		result := tx.Where("username = ?", input.ToUser).First(&takerUser)
-		if result.Error != nil {
-			statusCode = http.StatusInternalServerError
-			return result.Error
-		}
 
 		if claims.UserID < takerUser.ID {
 			result = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", claims.UserID).First(&giverWallet)

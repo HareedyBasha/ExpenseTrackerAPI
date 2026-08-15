@@ -31,6 +31,10 @@ func RetrieveTransactions(db *gorm.DB, claims *auth.Claims, page, limit int, fro
 		db = db.Where("category = ?", category)
 	}
 
+	if limit <= 0 {
+		limit = 1
+	}
+
 	offset := (page - 1) * limit
 	if offset < 0 {
 		offset = 0

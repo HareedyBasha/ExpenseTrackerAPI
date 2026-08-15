@@ -40,6 +40,13 @@ func createDatabase(cfg Config) error {
 	if err != nil {
 		return err
 	}
+
+	sqlDB, err := adminDB.DB()
+	if err != nil {
+		return err
+	}
+	defer sqlDB.Close()
+
 	return adminDB.Exec("CREATE DATABASE " + cfg.Name).Error
 }
 

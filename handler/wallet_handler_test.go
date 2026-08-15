@@ -569,6 +569,76 @@ func TestTransferFromWallet(t *testing.T) {
 		}
 	})
 
+	t.Run("user does not exist", func(t *testing.T) {
+		amount := 1000
+
+		db := SetupTestDB(t)
+
+		input := model.InputTransaction{ToUser: recieverUser.Username, Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
+
+		body := fmt.Sprintf(`{"to_user":%q,"amount":%v, "note":%q, "category":%q}`, "Bob", input.Amount, input.Note, input.Category)
+
+		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
+		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
+		claims, _ := auth.ValidateJWT(token)
+		c.Set("claims", claims)
+
+		result := db.Create(&recieverUser)
+		if result.Error != nil {
+			t.Fatalf("couldn't create reciever user: got err = %v", result.Error)
+		}
+
+		result = db.Model(&model.Wallet{}).Where("user_id = ?", claims.UserID).Update("balance", amount)
+		if result.Error != nil {
+			t.Fatalf("couldn't retrieve wallet: got err = %v", result.Error)
+		}
+
+		h := WalletHandler{DB: db}
+
+		h.TransferFromWallet(c)
+
+		wantCode := http.StatusNotFound
+		if recorder.Code != wantCode {
+			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
+		}
+
+	})
+
+	t.Run("self-transfer", func(t *testing.T) {
+		amount := 1000
+
+		db := SetupTestDB(t)
+
+		input := model.InputTransaction{ToUser: recieverUser.Username, Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
+
+		body := fmt.Sprintf(`{"to_user":%q,"amount":%v, "note":%q, "category":%q}`, userAccount1["username"], input.Amount, input.Note, input.Category)
+
+		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
+		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
+		claims, _ := auth.ValidateJWT(token)
+		c.Set("claims", claims)
+
+		result := db.Create(&recieverUser)
+		if result.Error != nil {
+			t.Fatalf("couldn't create reciever user: got err = %v", result.Error)
+		}
+
+		result = db.Model(&model.Wallet{}).Where("user_id = ?", claims.UserID).Update("balance", amount)
+		if result.Error != nil {
+			t.Fatalf("couldn't retrieve wallet: got err = %v", result.Error)
+		}
+
+		h := WalletHandler{DB: db}
+
+		h.TransferFromWallet(c)
+
+		wantCode := http.StatusUnprocessableEntity
+		if recorder.Code != wantCode {
+			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
+		}
+
+	})
+
 	t.Run("A transfers to B while B transfers to A (race condition)", func(t *testing.T) {
 
 		requestNum := 100

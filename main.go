@@ -1,9 +1,3 @@
-// @title           Todo App API
-// @version         1.0
-// @description     A todo list API with JWT auth and RBAC
-// @host            127.0.0.1:8080
-// @BasePath        /
-
 package main
 
 import (
@@ -11,11 +5,16 @@ import (
 	"expense_tracker/database"
 	"expense_tracker/handler"
 	"expense_tracker/model"
+	"os"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	if os.Getenv("JWT_KEY") == "" {
+		panic("JWT_KEY environment variable is not set")
+	}
+
 	// Create Router
 	r := gin.Default()
 
