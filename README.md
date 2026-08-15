@@ -138,7 +138,3 @@ go test ./...
 ```
 
 Some tests spin up a real PostgreSQL container via testcontainers-go and require Docker to be running locally.
-
-## License
-
-*(Add license information here.)*
