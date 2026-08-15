@@ -165,7 +165,7 @@ func (h *WalletHandler) TransferFromWallet(c *gin.Context) {
 	}
 
 	if claims.UserID == takerUser.ID {
-		response.RespondError(c, http.StatusUnprocessableEntity, gin.H{"cannot transfer to your own wallet": result.Error})
+		response.RespondError(c, http.StatusUnprocessableEntity, "cannot transfer to your own wallet")
 		return
 	}
 	var giverWallet model.Wallet
@@ -259,17 +259,19 @@ func (h *WalletHandler) GetUserWallet(c *gin.Context) {
 
 	var id *uint
 
-	if auth.IsAdmin(claims) {
-		idString := c.Query("id")
-		if idString != "" {
-			idValue, err := strconv.Atoi(idString)
-			if err != nil {
-				response.RespondError(c, http.StatusBadRequest, gin.H{"couldn't parse id": err})
-				return
-			}
-			idValueUint := (uint(idValue))
-			id = &idValueUint
+	idString := c.Query("id")
+	if idString != "" {
+		idValue, err := strconv.Atoi(idString)
+		if err != nil {
+			response.RespondError(c, http.StatusBadRequest, gin.H{"couldn't parse id": err})
+			return
 		}
+		if !auth.IsAdmin(claims) && uint(idValue) != claims.UserID {
+			response.RespondError(c, http.StatusForbidden, "not authorized to view this wallet")
+			return
+		}
+		idValueUint := uint(idValue)
+		id = &idValueUint
 	}
 
 	if id == nil {

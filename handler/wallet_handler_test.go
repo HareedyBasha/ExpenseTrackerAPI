@@ -700,4 +700,16 @@ func TestGetUserWallet(t *testing.T) {
 
 		CheckStatusCode(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
 	})
+
+	t.Run("user trying to get other user's wallets", func(t *testing.T) {
+		db := SetupTestDB(t)
+
+		c, recorder := SetupTestRequest("/wallet?id=6", "", http.MethodGet, nil)
+		SetupAuthUser(t, db, userAccount2, c)
+
+		h := WalletHandler{DB: db}
+		h.GetUserWallet(c)
+
+		CheckStatusCode(t, http.StatusForbidden, recorder.Code, recorder.Body.String())
+	})
 }

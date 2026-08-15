@@ -12,7 +12,7 @@ import (
 
 func TestGenerateJWT(t *testing.T) {
 	t.Run("generate a JWT", func(t *testing.T) {
-		token, err := GenerateJWT(1, "admin")
+		token, err := GenerateJWT(1, "admin", "Hareedy")
 
 		if err != nil {
 			t.Fatalf("got err = %v while generating token", err)
@@ -29,7 +29,7 @@ func TestGenerateJWT(t *testing.T) {
 
 }
 
-func generateExpiredJWT(claims *Claims) string {
+func GenerateExpiredJWT(claims *Claims) string {
 	godotenv.Load()
 	secret := os.Getenv("JWT_KEY")
 	claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-24 * time.Hour))
@@ -39,8 +39,8 @@ func generateExpiredJWT(claims *Claims) string {
 }
 
 func TestValidateJWT(t *testing.T) {
-	validClaims := Claims{UserID: 1, Role: "user"}
-	validToken, _ := GenerateJWT(validClaims.UserID, validClaims.Role)
+	validClaims := Claims{UserID: 1, Role: "user", Username: "Adam"}
+	validToken, _ := GenerateJWT(validClaims.UserID, validClaims.Role, validClaims.Username)
 
 	t.Run("valid token", func(t *testing.T) {
 		claims, err := ValidateJWT(validToken)
@@ -73,7 +73,7 @@ func TestValidateJWT(t *testing.T) {
 
 	t.Run("expired token", func(t *testing.T) {
 		expiredClaims := validClaims
-		_, err := ValidateJWT(generateExpiredJWT(&expiredClaims))
+		_, err := ValidateJWT(GenerateExpiredJWT(&expiredClaims))
 		if err == nil {
 			t.Error("validation was successful on an expired token")
 		}

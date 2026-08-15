@@ -177,7 +177,7 @@ func CompareWalletsUserID(t *testing.T, gotWalletBytes []byte, wantUserID int) {
 
 }
 
-func mustParse(t *testing.T, value string) time.Time {
+func MustParse(t *testing.T, value string) time.Time {
 	t.Helper()
 	parsed, err := time.Parse(time.RFC3339, value)
 	if err != nil {

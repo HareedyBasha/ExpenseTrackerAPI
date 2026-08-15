@@ -16,13 +16,13 @@ func TestGetAllTransactions(t *testing.T) {
 	userAccount := map[string]string{"username": "Hareedy", "password": "12345678", "role": "user"}
 
 	seedData := []model.Transaction{
-		{Amount: 120, Type: "withdraw", Category: "transport", Note: "last month taxi", Model: model.Model{CreatedAt: mustParse(t, "2026-07-15T00:00:00Z")}},
-		{Amount: 300, Type: "withdraw", Category: "food", Note: "last month groceries", Model: model.Model{CreatedAt: mustParse(t, "2026-07-28T00:00:00Z")}},
-		{Amount: 150, Type: "withdraw", Category: "food", Note: "groceries", Model: model.Model{CreatedAt: mustParse(t, "2026-08-02T00:00:00Z")}},
-		{Amount: 250, Type: "withdraw", Category: "food", Note: "restaurant", Model: model.Model{CreatedAt: mustParse(t, "2026-08-05T00:00:00Z")}},
-		{Amount: 80, Type: "withdraw", Category: "transport", Note: "uber", Model: model.Model{CreatedAt: mustParse(t, "2026-08-10T00:00:00Z")}},
-		{Amount: 500, Type: "withdraw", Category: "entertainment", Note: "concert", Model: model.Model{CreatedAt: mustParse(t, "2026-08-20T00:00:00Z")}},
-		{Amount: 5000, Type: "deposit", Category: "salary", Note: "paycheck", Model: model.Model{CreatedAt: mustParse(t, "2026-08-25T00:00:00Z")}},
+		{Amount: 120, Type: "withdraw", Category: "transport", Note: "last month taxi", Model: model.Model{CreatedAt: MustParse(t, "2026-07-15T00:00:00Z")}},
+		{Amount: 300, Type: "withdraw", Category: "food", Note: "last month groceries", Model: model.Model{CreatedAt: MustParse(t, "2026-07-28T00:00:00Z")}},
+		{Amount: 150, Type: "withdraw", Category: "food", Note: "groceries", Model: model.Model{CreatedAt: MustParse(t, "2026-08-02T00:00:00Z")}},
+		{Amount: 250, Type: "withdraw", Category: "food", Note: "restaurant", Model: model.Model{CreatedAt: MustParse(t, "2026-08-05T00:00:00Z")}},
+		{Amount: 80, Type: "withdraw", Category: "transport", Note: "uber", Model: model.Model{CreatedAt: MustParse(t, "2026-08-10T00:00:00Z")}},
+		{Amount: 500, Type: "withdraw", Category: "entertainment", Note: "concert", Model: model.Model{CreatedAt: MustParse(t, "2026-08-20T00:00:00Z")}},
+		{Amount: 5000, Type: "deposit", Category: "salary", Note: "paycheck", Model: model.Model{CreatedAt: MustParse(t, "2026-08-25T00:00:00Z")}},
 	}
 
 	type Cases struct {
@@ -54,19 +54,19 @@ func TestGetAllTransactions(t *testing.T) {
 		},
 		{
 			Name:           "date range - august only",
-			Filter:         &Filter{From: TimePtr(mustParse(t, "2026-08-01T00:00:00Z")), To: TimePtr(mustParse(t, "2026-08-31T00:00:00Z"))},
+			Filter:         &Filter{From: TimePtr(MustParse(t, "2026-08-01T00:00:00Z")), To: TimePtr(MustParse(t, "2026-08-31T00:00:00Z"))},
 			WantStatusCode: http.StatusOK,
 			CheckBody:      true,
 		},
 		{
 			Name:           "date range - excludes everything",
-			Filter:         &Filter{From: TimePtr(mustParse(t, "2027-01-01T00:00:00Z")), To: TimePtr(mustParse(t, "2027-01-31T00:00:00Z"))},
+			Filter:         &Filter{From: TimePtr(MustParse(t, "2027-01-01T00:00:00Z")), To: TimePtr(MustParse(t, "2027-01-31T00:00:00Z"))},
 			WantStatusCode: http.StatusOK,
 			CheckBody:      true,
 		},
 		{
 			Name:           "category + date range combined",
-			Filter:         &Filter{Category: StrPtr("food"), From: TimePtr(mustParse(t, "2026-08-01T00:00:00Z")), To: TimePtr(mustParse(t, "2026-08-31T00:00:00Z"))},
+			Filter:         &Filter{Category: StrPtr("food"), From: TimePtr(MustParse(t, "2026-08-01T00:00:00Z")), To: TimePtr(MustParse(t, "2026-08-31T00:00:00Z"))},
 			WantStatusCode: http.StatusOK,
 			CheckBody:      true,
 		},
@@ -222,7 +222,7 @@ func TestGetAllTransactions(t *testing.T) {
 		db.Where("user_id = ?", otherClaims.UserID).First(&otherWallet)
 		SeedTransactions(t, db, otherWallet.ID, []model.Transaction{
 			{Amount: 999, Type: "withdraw", Category: "secret", Note: "should never appear",
-				Model: model.Model{CreatedAt: mustParse(t, "2026-08-15T00:00:00Z")}},
+				Model: model.Model{CreatedAt: MustParse(t, "2026-08-15T00:00:00Z")}},
 		})
 
 		h := TransactionHandler{DB: db}

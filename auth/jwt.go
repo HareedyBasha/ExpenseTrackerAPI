@@ -9,15 +9,16 @@ import (
 )
 
 type Claims struct {
-	UserID uint
-	Role   string
+	UserID   uint
+	Username string
+	Role     string
 	jwt.RegisteredClaims
 }
 
-func GenerateJWT(userID uint, role string) (string, error) {
+func GenerateJWT(userID uint, role, username string) (string, error) {
 	// godotenv.Load() already runs once in main when using loadConfig from database.go
 	secret := os.Getenv("JWT_KEY")
-	claims := Claims{UserID: userID, Role: role}
+	claims := Claims{UserID: userID, Role: role, Username: username}
 	claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(24 * time.Hour))
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
 	return token, err

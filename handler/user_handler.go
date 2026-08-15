@@ -88,7 +88,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := auth.GenerateJWT(foundUser.ID, foundUser.Role)
+	token, err := auth.GenerateJWT(foundUser.ID, foundUser.Role, foundUser.Username)
 	if err != nil {
 		response.RespondError(c, http.StatusInternalServerError, err)
 		return
