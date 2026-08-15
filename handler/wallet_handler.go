@@ -4,10 +4,10 @@ import (
 	"errors"
 	"expense_tracker/auth"
 	"expense_tracker/model"
-	"expense_tracker/repository"
 	"expense_tracker/response"
 	"expense_tracker/service"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -252,10 +252,30 @@ func (h *WalletHandler) GetUserWallet(c *gin.Context) {
 		return
 	}
 
+	var id *uint
+
+	if auth.IsAdmin(claims) {
+		idString := c.Query("id")
+		if idString != "" {
+			idValue, err := strconv.Atoi(idString)
+			if err != nil {
+				response.RespondError(c, http.StatusBadRequest, gin.H{"couldn't parse id": err})
+				return
+			}
+			idValueUint := (uint(idValue))
+			id = &idValueUint
+		}
+	}
+
+	if id == nil {
+		id = &claims.UserID
+	}
+
 	wallet := model.Wallet{}
-	result := repository.RetrieveBy(h.DB, &wallet, "user_id", int(claims.UserID))
+	result := h.DB.Where("user_id = ?", *id).First(&wallet)
 	if result.Error != nil {
-		response.RespondError(c, http.StatusInternalServerError, result.Error)
+		response.RespondError(c, http.StatusNotFound, result.Error)
+		return
 	}
 
 	response.RespondOK(c, gin.H{"user_id": wallet.UserID, "balance": wallet.Balance})

@@ -148,6 +148,25 @@ func CompareWalletsBalance(t *testing.T, gotWalletBytes []byte, wantBalance int)
 
 }
 
+func CompareWalletsUserID(t *testing.T, gotWalletBytes []byte, wantUserID int) {
+	t.Helper()
+	type Response struct {
+		UserID  uint `json:"user_id"`
+		Balance uint `json:"balance"`
+	}
+	var gotRespone Response
+
+	err := json.Unmarshal(gotWalletBytes, &gotRespone)
+	if err != nil {
+		t.Fatalf("couldn't parse returned wallet - gor err = %v", err)
+	}
+
+	if int(gotRespone.UserID) != wantUserID {
+		t.Errorf("got user_id = %v, wanted %v", gotRespone.UserID, wantUserID)
+	}
+
+}
+
 func TransactionsCheck(t *testing.T, db *gorm.DB, wantTransaction model.Transaction, gotTransactionID int) {
 	t.Helper()
 	var gotTransaction model.Transaction

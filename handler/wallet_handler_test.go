@@ -686,12 +686,13 @@ func TestTransferFromWallet(t *testing.T) {
 }
 
 func TestGetUserWallet(t *testing.T) {
-	userAccount := map[string]string{"username": "Hareedy", "password": "12345678", "role": "admin"}
+	userAccount1 := map[string]string{"username": "Hareedy", "password": "12345678", "role": "admin"}
+	userAccount2 := map[string]string{"username": "Adam", "password": "12345678", "role": "user"}
 	t.Run("successful retrieval", func(t *testing.T) {
 		db := SetupTestDB(t)
 
 		c, recorder := SetupTestRequest("/wallet", "", http.MethodGet, nil)
-		token := SetupTestUser(t, db, userAccount["username"], userAccount["password"], userAccount["role"])
+		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
 		claims, _ := auth.ValidateJWT(token)
 		c.Set("claims", claims)
 
@@ -733,5 +734,67 @@ func TestGetUserWallet(t *testing.T) {
 		if recorder.Code != wantCode {
 			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
 		}
+	})
+
+	t.Run("successful admin retrieval for another id", func(t *testing.T) {
+		db := SetupTestDB(t)
+		id := 2
+
+		c, recorder := SetupTestRequest(fmt.Sprintf("/wallet?id=%v", id), "", http.MethodGet, nil)
+		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
+		_ = SetupTestUser(t, db, userAccount2["username"], userAccount2["password"], userAccount2["role"])
+		claims, _ := auth.ValidateJWT(token)
+		c.Set("claims", claims)
+
+		h := WalletHandler{DB: db}
+
+		h.GetUserWallet(c)
+
+		wantCode := http.StatusOK
+		if recorder.Code != wantCode {
+			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
+		}
+
+		CompareWalletsUserID(t, recorder.Body.Bytes(), id)
+	})
+
+	t.Run("wrong id format for admin retrieval", func(t *testing.T) {
+		db := SetupTestDB(t)
+
+		c, recorder := SetupTestRequest(fmt.Sprintf("/wallet?id=%v", "two"), "", http.MethodGet, nil)
+		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
+		_ = SetupTestUser(t, db, userAccount2["username"], userAccount2["password"], userAccount2["role"])
+		claims, _ := auth.ValidateJWT(token)
+		c.Set("claims", claims)
+
+		h := WalletHandler{DB: db}
+
+		h.GetUserWallet(c)
+
+		wantCode := http.StatusBadRequest
+		if recorder.Code != wantCode {
+			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
+		}
+
+	})
+
+	t.Run("id doesn't exist for admin retrieval", func(t *testing.T) {
+		db := SetupTestDB(t)
+
+		c, recorder := SetupTestRequest(fmt.Sprintf("/wallet?id=%v", 999), "", http.MethodGet, nil)
+		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
+		_ = SetupTestUser(t, db, userAccount2["username"], userAccount2["password"], userAccount2["role"])
+		claims, _ := auth.ValidateJWT(token)
+		c.Set("claims", claims)
+
+		h := WalletHandler{DB: db}
+
+		h.GetUserWallet(c)
+
+		wantCode := http.StatusNotFound
+		if recorder.Code != wantCode {
+			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
+		}
+
 	})
 }
