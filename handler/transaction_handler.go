@@ -91,3 +91,51 @@ func (h *TransactionHandler) GetAllTransactions(c *gin.Context) {
 
 	response.RespondOK(c, foundTransactions)
 }
+
+func (h *TransactionHandler) GetTransactionSummary(c *gin.Context) {
+	claims, err, statusCode := claimsChecks(c)
+	if err != nil {
+		response.RespondError(c, statusCode, err)
+		return
+	}
+
+	type CategorySummary struct {
+		Category string
+		Total    int
+		Count    int
+	}
+
+	now := time.Now()
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	endOfMonth := startOfMonth.AddDate(0, 1, 0)
+	var wallet model.Wallet
+
+	result := h.DB.Where("user_id = ?", claims.UserID).First(&wallet)
+	if result.Error != nil {
+		response.RespondError(c, http.StatusNotFound, result.Error)
+		return
+	}
+
+	var summaries []CategorySummary
+	result = h.DB.Model(&model.Transaction{}).Select("category, SUM(amount) AS total, COUNT(*) AS count").Where("wallet_id = ? AND created_at < ? AND created_at >= ?", wallet.ID, endOfMonth, startOfMonth).Group("category").Order("total DESC").Scan(&summaries)
+	if result.Error != nil {
+		response.RespondError(c, http.StatusInternalServerError, result.Error)
+		return
+	}
+
+	type SummaryResult struct {
+		Period     string            `json:"period"`
+		Total      int               `json:"total"`
+		Categories []CategorySummary `json:"categories"`
+	}
+
+	var total int
+	for _, summary := range summaries {
+		total += summary.Total
+	}
+
+	summaryResult := SummaryResult{Period: now.Format("2006-01"), Total: total, Categories: summaries}
+
+	response.RespondOK(c, summaryResult)
+
+}

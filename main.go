@@ -8,9 +8,11 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	godotenv.Load()
 	if os.Getenv("JWT_KEY") == "" {
 		panic("JWT_KEY environment variable is not set")
 	}
@@ -47,7 +49,9 @@ func main() {
 	walletGroup.POST("/withdraw", walletHandler.WithdrawFromWallet)
 	walletGroup.POST("/transfer", walletHandler.TransferFromWallet)
 	walletGroup.GET("", walletHandler.GetUserWallet)
+
 	transactionGroup.GET("", transactionHandler.GetAllTransactions)
+	transactionGroup.GET("/summary", transactionHandler.GetTransactionSummary)
 
 	r.Run("127.0.0.1:8080")
 }
