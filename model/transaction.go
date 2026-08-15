@@ -9,7 +9,7 @@ import (
 type Transaction struct {
 	Model
 	WalletID        uint   `json:"wallet_id"`
-	RelatedWalledID *uint  `json:"related_wallet_id"`
+	RelatedWalletID *uint  `json:"related_wallet_id"`
 	Amount          uint   `json:"amount"`
 	Type            string `json:"type"`
 	Category        string `json:"category"`

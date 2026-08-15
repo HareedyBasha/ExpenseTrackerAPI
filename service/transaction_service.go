@@ -15,7 +15,7 @@ func NewTransaction(db *gorm.DB, walletId, amount uint, transactionType, categor
 		return model.Transaction{}, result.Error
 	}
 
-	transaction := model.Transaction{WalletID: walletId, RelatedWalledID: nil, Amount: amount, Type: transactionType, Category: strings.ToLower(category), Note: note}
+	transaction := model.Transaction{WalletID: walletId, RelatedWalletID: nil, Amount: amount, Type: transactionType, Category: strings.ToLower(category), Note: note}
 
 	err := transaction.Validate()
 	if err != nil {
@@ -40,13 +40,13 @@ func NewTransferTransaction(db *gorm.DB, giverWalletId, takerWalletId, amount ui
 		return
 	}
 
-	giverTransaction = model.Transaction{WalletID: giverWalletId, RelatedWalledID: &takerWalletId, Amount: amount, Type: "transfer_out", Category: strings.ToLower(category), Note: note}
+	giverTransaction = model.Transaction{WalletID: giverWalletId, RelatedWalletID: &takerWalletId, Amount: amount, Type: "transfer_out", Category: strings.ToLower(category), Note: note}
 	err = giverTransaction.Validate()
 	if err != nil {
 		return
 	}
 
-	takerTransaction = model.Transaction{WalletID: takerWalletId, RelatedWalledID: &giverWalletId, Amount: amount, Type: "transfer_in", Category: strings.ToLower(category), Note: note}
+	takerTransaction = model.Transaction{WalletID: takerWalletId, RelatedWalletID: &giverWalletId, Amount: amount, Type: "transfer_in", Category: strings.ToLower(category), Note: note}
 	err = takerTransaction.Validate()
 	if err != nil {
 		return

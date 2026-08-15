@@ -1,6 +1,10 @@
 package model
 
-import "strings"
+import (
+	"strings"
+
+	"gorm.io/gorm"
+)
 
 type UserInput struct {
 	Username string `json:"username"`
@@ -12,6 +16,7 @@ type User struct {
 	Username string `json:"username" gorm:"uniqueIndex"`
 	Password string `json:"-"`
 	Role     string `json:"role"`
+	Wallet   Wallet
 }
 
 func (user UserInput) Validate() map[string]string {
@@ -26,4 +31,19 @@ func (user UserInput) Validate() map[string]string {
 	}
 
 	return errs
+}
+
+func (user *User) AfterCreate(tx *gorm.DB) (err error) {
+	// Create a new wallet associated with this user's ID
+	wallet := Wallet{
+		UserID:  user.ID,
+		Balance: 0,
+	}
+
+	// Use the transaction (tx) provided by GORM to create the wallet
+	if err := tx.Create(&wallet).Error; err != nil {
+		return err
+	}
+
+	return nil
 }

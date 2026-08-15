@@ -65,12 +65,12 @@ func (h *WalletHandler) DepositToWallet(c *gin.Context) {
 			return result.Error
 		}
 
-		transaction, err = service.NewTransaction(h.DB, wallet.ID, input.Amount, "deposit", input.Category, input.Note)
+		transaction, err = service.NewTransaction(tx, wallet.ID, input.Amount, "deposit", input.Category, input.Note)
 		if err != nil {
-			return result.Error
+			return err
 		}
 
-		result = h.DB.Create(&transaction)
+		result = tx.Create(&transaction)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -105,26 +105,31 @@ func (h *WalletHandler) WithdrawFromWallet(c *gin.Context) {
 	err = h.DB.Transaction(func(tx *gorm.DB) error {
 		result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", claims.UserID).First(&wallet)
 		if result.Error != nil {
+			statusCode = http.StatusInternalServerError
 			return result.Error
 		}
 
 		err = wallet.Withdraw(input.Amount)
 		if err != nil {
+			statusCode = http.StatusUnprocessableEntity
 			return err
 		}
 
 		result = tx.Save(&wallet)
 		if result.Error != nil {
+			statusCode = http.StatusInternalServerError
 			return result.Error
 		}
 
-		transaction, err = service.NewTransaction(h.DB, wallet.ID, input.Amount, "withdraw", input.Category, input.Note)
+		transaction, err = service.NewTransaction(tx, wallet.ID, input.Amount, "withdraw", input.Category, input.Note)
 		if err != nil {
-			return result.Error
+			statusCode = http.StatusInternalServerError
+			return err
 		}
 
-		result = h.DB.Create(&transaction)
+		result = tx.Create(&transaction)
 		if result.Error != nil {
+			statusCode = http.StatusInternalServerError
 			return result.Error
 		}
 
@@ -132,7 +137,7 @@ func (h *WalletHandler) WithdrawFromWallet(c *gin.Context) {
 	})
 
 	if err != nil {
-		response.RespondError(c, http.StatusInternalServerError, err)
+		response.RespondError(c, statusCode, err)
 		return
 	}
 
@@ -161,21 +166,39 @@ func (h *WalletHandler) TransferFromWallet(c *gin.Context) {
 	err = h.DB.Transaction(func(tx *gorm.DB) error {
 		result := tx.Where("username = ?", input.ToUser).First(&takerUser)
 		if result.Error != nil {
+			statusCode = http.StatusInternalServerError
 			return result.Error
 		}
 
-		result = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", claims.UserID).First(&giverWallet)
-		if result.Error != nil {
-			return result.Error
-		}
+		if claims.UserID < takerUser.ID {
+			result = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", claims.UserID).First(&giverWallet)
+			if result.Error != nil {
+				statusCode = http.StatusInternalServerError
+				return result.Error
+			}
 
-		result = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", takerUser.ID).First(&takerWallet)
-		if result.Error != nil {
-			return result.Error
+			result = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", takerUser.ID).First(&takerWallet)
+			if result.Error != nil {
+				statusCode = http.StatusInternalServerError
+				return result.Error
+			}
+		} else {
+			result = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", takerUser.ID).First(&takerWallet)
+			if result.Error != nil {
+				statusCode = http.StatusInternalServerError
+				return result.Error
+			}
+
+			result = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", claims.UserID).First(&giverWallet)
+			if result.Error != nil {
+				statusCode = http.StatusInternalServerError
+				return result.Error
+			}
 		}
 
 		err = giverWallet.Withdraw(input.Amount)
 		if err != nil {
+			statusCode = http.StatusUnprocessableEntity
 			return err
 		}
 
@@ -183,26 +206,31 @@ func (h *WalletHandler) TransferFromWallet(c *gin.Context) {
 
 		result = tx.Save(&giverWallet)
 		if result.Error != nil {
+			statusCode = http.StatusInternalServerError
 			return result.Error
 		}
 
 		result = tx.Save(&takerWallet)
 		if result.Error != nil {
+			statusCode = http.StatusInternalServerError
 			return result.Error
 		}
 
 		takerTransaction, giverTransaction, err = service.NewTransferTransaction(tx, giverWallet.ID, takerWallet.ID, input.Amount, input.Category, input.Note)
 		if err != nil {
+			statusCode = http.StatusInternalServerError
 			return err
-		}
-
-		result = tx.Create(&takerTransaction)
-		if result.Error != nil {
-			return result.Error
 		}
 
 		result = tx.Create(&giverTransaction)
 		if result.Error != nil {
+			statusCode = http.StatusInternalServerError
+			return result.Error
+		}
+
+		result = tx.Create(&takerTransaction)
+		if result.Error != nil {
+			statusCode = http.StatusInternalServerError
 			return result.Error
 		}
 
@@ -210,7 +238,7 @@ func (h *WalletHandler) TransferFromWallet(c *gin.Context) {
 	})
 
 	if err != nil {
-		response.RespondError(c, http.StatusInternalServerError, err)
+		response.RespondError(c, statusCode, err)
 		return
 	}
 
@@ -221,6 +249,7 @@ func (h *WalletHandler) GetUserWallet(c *gin.Context) {
 	claims, err, statusCode := claimsChecks(c)
 	if err != nil {
 		response.RespondError(c, statusCode, err)
+		return
 	}
 
 	wallet := model.Wallet{}

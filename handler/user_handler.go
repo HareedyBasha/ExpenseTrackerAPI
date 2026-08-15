@@ -55,13 +55,6 @@ func (h *UserHandler) Signup(c *gin.Context) {
 		return
 	}
 
-	newWallet := service.NewWallet(newUser)
-	result = h.DB.Create(&newWallet)
-	if result.Error != nil {
-		response.RespondError(c, http.StatusInternalServerError, result.Error)
-		return
-	}
-
 	response.RespondCreated(c, newUser)
 
 }
