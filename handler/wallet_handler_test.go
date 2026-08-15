@@ -13,26 +13,20 @@ import (
 
 func TestDepositToWallet(t *testing.T) {
 	userAccount := map[string]string{"username": "Hareedy", "password": "12345678", "role": "admin"}
+
 	t.Run("successful desposit", func(t *testing.T) {
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{Amount: 1000, Note: "Don't spend it all in one place!", Category: "Salary"}
-
 		body := fmt.Sprintf(`{"amount":%v, "note":%q, "category":%q}`, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
-		token := SetupTestUser(t, db, userAccount["username"], userAccount["password"], userAccount["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
+		SetupAuthUser(t, db, userAccount, c)
 
 		h := WalletHandler{DB: db}
-
 		h.DepositToWallet(c)
 
-		wantCode := http.StatusOK
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
+		CheckStatusCode(t, http.StatusOK, recorder.Code, recorder.Body.String())
 
 		wantBalance := 1000
 		CompareWalletsBalance(t, recorder.Body.Bytes(), wantBalance)
@@ -45,63 +39,44 @@ func TestDepositToWallet(t *testing.T) {
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{Amount: 1000, Note: "Don't spend it all in one place!", Category: "Salary"}
-
 		body := fmt.Sprintf(`{"amount":%v, "note":%q, "category":%q}`, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
 
 		h := WalletHandler{DB: db}
-
 		h.DepositToWallet(c)
 
-		wantCode := http.StatusUnauthorized
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
+		CheckStatusCode(t, http.StatusUnauthorized, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("invalid claims", func(t *testing.T) {
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{Amount: 1000, Note: "Don't spend it all in one place!", Category: "Salary"}
-
 		body := fmt.Sprintf(`{"amount":%v, "note":%q, "category":%q}`, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
 		c.Set("claims", 1234)
 
 		h := WalletHandler{DB: db}
-
 		h.DepositToWallet(c)
 
-		wantCode := http.StatusInternalServerError
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
-
+		CheckStatusCode(t, http.StatusInternalServerError, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("bad json body", func(t *testing.T) {
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{Amount: 1000, Note: "Don't spend it all in one place!", Category: "Salary"}
-
 		body := fmt.Sprintf(`{"amount"=%v, "note"=%q, "category"=%q}`, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
-		token := SetupTestUser(t, db, userAccount["username"], userAccount["password"], userAccount["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
+		SetupAuthUser(t, db, userAccount, c)
 
 		h := WalletHandler{DB: db}
-
 		h.DepositToWallet(c)
 
-		wantCode := http.StatusBadRequest
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
-
+		CheckStatusCode(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("multiple concurrent deposits (race condition)", func(t *testing.T) {
@@ -116,6 +91,9 @@ func TestDepositToWallet(t *testing.T) {
 		var wg sync.WaitGroup
 		wg.Add(requestsNum)
 		start := make(chan struct{})
+
+		// no *gin.Context exists yet at this point — each goroutine creates its own below,
+		// so SetupAuthUser (which needs a context to attach claims to) can't be used here
 		token := SetupTestUser(t, db, userAccount["username"], userAccount["password"], userAccount["role"])
 		claims, _ := auth.ValidateJWT(token)
 
@@ -128,14 +106,9 @@ func TestDepositToWallet(t *testing.T) {
 				h := WalletHandler{DB: db}
 
 				<-start
-
 				h.DepositToWallet(c)
 
-				wantCode := http.StatusOK
-				if recorder.Code != wantCode {
-					t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-				}
-
+				CheckStatusCode(t, http.StatusOK, recorder.Code, recorder.Body.String())
 			}()
 		}
 
@@ -159,25 +132,21 @@ func TestDepositToWallet(t *testing.T) {
 		if count != int64(requestsNum) {
 			t.Errorf("got %v transactions, wanted %v", count, requestsNum)
 		}
-
 	})
 }
 
 func TestWithdrawFromWallet(t *testing.T) {
 	userAccount := map[string]string{"username": "Hareedy", "password": "12345678", "role": "admin"}
+
 	t.Run("successful withdrawal", func(t *testing.T) {
 		amount := 1000
-
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
-
 		body := fmt.Sprintf(`{"amount":%v, "note":%q, "category":%q}`, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
-		token := SetupTestUser(t, db, userAccount["username"], userAccount["password"], userAccount["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
+		claims := SetupAuthUser(t, db, userAccount, c)
 
 		result := db.Model(&model.Wallet{}).Where("user_id = ?", claims.UserID).Update("balance", amount)
 		if result.Error != nil {
@@ -185,13 +154,9 @@ func TestWithdrawFromWallet(t *testing.T) {
 		}
 
 		h := WalletHandler{DB: db}
-
 		h.WithdrawFromWallet(c)
 
-		wantCode := http.StatusOK
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
+		CheckStatusCode(t, http.StatusOK, recorder.Code, recorder.Body.String())
 
 		wantBalance := 0
 		CompareWalletsBalance(t, recorder.Body.Bytes(), wantBalance)
@@ -202,17 +167,13 @@ func TestWithdrawFromWallet(t *testing.T) {
 
 	t.Run("insuffcient funds", func(t *testing.T) {
 		amount := 1000
-
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
-
 		body := fmt.Sprintf(`{"amount":%v, "note":%q, "category":%q}`, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
-		token := SetupTestUser(t, db, userAccount["username"], userAccount["password"], userAccount["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
+		claims := SetupAuthUser(t, db, userAccount, c)
 
 		result := db.Model(&model.Wallet{}).Where("user_id = ?", claims.UserID).Update("balance", (amount / 2))
 		if result.Error != nil {
@@ -220,82 +181,56 @@ func TestWithdrawFromWallet(t *testing.T) {
 		}
 
 		h := WalletHandler{DB: db}
-
 		h.WithdrawFromWallet(c)
 
-		wantCode := http.StatusUnprocessableEntity
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
-
+		CheckStatusCode(t, http.StatusUnprocessableEntity, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("missing claims", func(t *testing.T) {
 		amount := 1000
-
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
-
 		body := fmt.Sprintf(`{"amount":%v, "note":%q, "category":%q}`, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
 
 		h := WalletHandler{DB: db}
-
 		h.WithdrawFromWallet(c)
 
-		wantCode := http.StatusUnauthorized
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
+		CheckStatusCode(t, http.StatusUnauthorized, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("invalid claims", func(t *testing.T) {
 		amount := 1000
-
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
-
 		body := fmt.Sprintf(`{"amount":%v, "note":%q, "category":%q}`, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
 		c.Set("claims", 1234)
 
 		h := WalletHandler{DB: db}
-
 		h.WithdrawFromWallet(c)
 
-		wantCode := http.StatusInternalServerError
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
+		CheckStatusCode(t, http.StatusInternalServerError, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("bad json input", func(t *testing.T) {
 		amount := 1000
-
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
-
 		body := fmt.Sprintf(`{"amount"=%v, "note"=%q, "category"=%q}`, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
-		token := SetupTestUser(t, db, userAccount["username"], userAccount["password"], userAccount["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
+		SetupAuthUser(t, db, userAccount, c)
 
 		h := WalletHandler{DB: db}
-
 		h.WithdrawFromWallet(c)
 
-		wantCode := http.StatusBadRequest
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
-
+		CheckStatusCode(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("multiple concurrent withdraws (race condition)", func(t *testing.T) {
@@ -306,6 +241,8 @@ func TestWithdrawFromWallet(t *testing.T) {
 
 		input := model.InputTransaction{Amount: uint(depositAmount), Note: "Don't spend it all in one place!", Category: "Salary"}
 		body := fmt.Sprintf(`{"amount":%v, "note":%q, "category":%q}`, input.Amount, input.Note, input.Category)
+
+		// same reason as the deposit race test — no single context to attach claims to
 		token := SetupTestUser(t, db, userAccount["username"], userAccount["password"], userAccount["role"])
 		claims, _ := auth.ValidateJWT(token)
 
@@ -327,14 +264,9 @@ func TestWithdrawFromWallet(t *testing.T) {
 				h := WalletHandler{DB: db}
 
 				<-start
-
 				h.WithdrawFromWallet(c)
 
-				wantCode := http.StatusOK
-				if recorder.Code != wantCode {
-					t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-				}
-
+				CheckStatusCode(t, http.StatusOK, recorder.Code, recorder.Body.String())
 			}()
 		}
 
@@ -358,7 +290,6 @@ func TestWithdrawFromWallet(t *testing.T) {
 		if count != int64(requestsNum) {
 			t.Errorf("got %v transactions, wanted %v", count, requestsNum)
 		}
-
 	})
 }
 
@@ -366,19 +297,16 @@ func TestTransferFromWallet(t *testing.T) {
 	userAccount1 := map[string]string{"username": "Hareedy", "password": "12345678", "role": "user"}
 	userAccount2 := map[string]string{"username": "Ahmed", "password": "verystrongpassword", "role": "user"}
 	recieverUser := model.User{Username: "Adam", Password: "password", Role: "user"}
+
 	t.Run("successful transfer", func(t *testing.T) {
 		amount := 1000
-
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{ToUser: recieverUser.Username, Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
-
 		body := fmt.Sprintf(`{"to_user":%q,"amount":%v, "note":%q, "category":%q}`, input.ToUser, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
-		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
+		claims := SetupAuthUser(t, db, userAccount1, c)
 
 		result := db.Create(&recieverUser)
 		if result.Error != nil {
@@ -391,13 +319,9 @@ func TestTransferFromWallet(t *testing.T) {
 		}
 
 		h := WalletHandler{DB: db}
-
 		h.TransferFromWallet(c)
 
-		wantCode := http.StatusOK
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
+		CheckStatusCode(t, http.StatusOK, recorder.Code, recorder.Body.String())
 
 		wantBalance := 0
 		CompareWalletsBalance(t, recorder.Body.Bytes(), wantBalance)
@@ -419,32 +343,25 @@ func TestTransferFromWallet(t *testing.T) {
 		var takerWallet model.Wallet
 		db.Where("user_id = ?", recieverUser.ID).First(&takerWallet)
 
-		var giverWalletID uint
-		giverWalletID = giverWallet.ID
+		giverWalletID := giverWallet.ID
+		takerWalletID := takerWallet.ID
 
-		var takerWalletID uint
-		takerWalletID = takerWallet.ID
-
-		wantTransaction := model.Transaction{Amount: input.Amount, Note: input.Note, Category: strings.ToLower(input.Category), Type: "transfer_out", WalletID: uint(giverWalletID), RelatedWalletID: &takerWalletID}
+		wantTransaction := model.Transaction{Amount: input.Amount, Note: input.Note, Category: strings.ToLower(input.Category), Type: "transfer_out", WalletID: giverWalletID, RelatedWalletID: &takerWalletID}
 		TransactionsCheck(t, db, wantTransaction, 2)
 
-		wantTransaction = model.Transaction{Amount: input.Amount, Note: input.Note, Category: strings.ToLower(input.Category), Type: "transfer_in", WalletID: uint(takerWalletID), RelatedWalletID: &giverWalletID}
+		wantTransaction = model.Transaction{Amount: input.Amount, Note: input.Note, Category: strings.ToLower(input.Category), Type: "transfer_in", WalletID: takerWalletID, RelatedWalletID: &giverWalletID}
 		TransactionsCheck(t, db, wantTransaction, 1)
 	})
 
 	t.Run("insufficient funds", func(t *testing.T) {
 		amount := 1000
-
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{ToUser: recieverUser.Username, Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
-
 		body := fmt.Sprintf(`{"to_user":%q,"amount":%v, "note":%q, "category":%q}`, input.ToUser, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
-		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
+		claims := SetupAuthUser(t, db, userAccount1, c)
 
 		result := db.Create(&recieverUser)
 		if result.Error != nil {
@@ -457,26 +374,23 @@ func TestTransferFromWallet(t *testing.T) {
 		}
 
 		h := WalletHandler{DB: db}
-
 		h.TransferFromWallet(c)
 
-		wantCode := http.StatusUnprocessableEntity
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
-
+		CheckStatusCode(t, http.StatusUnprocessableEntity, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("missing claims", func(t *testing.T) {
 		amount := 1000
-
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{ToUser: recieverUser.Username, Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
-
 		body := fmt.Sprintf(`{"to_user":%q,"amount":%v, "note":%q, "category":%q}`, input.ToUser, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
+
+		// need claims.UserID to seed the balance below, but must NOT call c.Set("claims", ...)
+		// since this test is specifically checking the missing-claims path — so get claims
+		// directly via ValidateJWT instead of SetupAuthUser (which would set them on c)
 		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
 		claims, _ := auth.ValidateJWT(token)
 
@@ -491,29 +405,21 @@ func TestTransferFromWallet(t *testing.T) {
 		}
 
 		h := WalletHandler{DB: db}
-
 		h.TransferFromWallet(c)
 
-		wantCode := http.StatusUnauthorized
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
-
+		CheckStatusCode(t, http.StatusUnauthorized, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("invalid claims", func(t *testing.T) {
 		amount := 1000
-
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{ToUser: recieverUser.Username, Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
-
 		body := fmt.Sprintf(`{"to_user":%q,"amount":%v, "note":%q, "category":%q}`, input.ToUser, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
-		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", 1234)
+		claims := SetupAuthUser(t, db, userAccount1, c)
+		c.Set("claims", 1234) // overwrite the valid claims SetupAuthUser just set — that's the point of this test
 
 		result := db.Create(&recieverUser)
 		if result.Error != nil {
@@ -526,28 +432,20 @@ func TestTransferFromWallet(t *testing.T) {
 		}
 
 		h := WalletHandler{DB: db}
-
 		h.TransferFromWallet(c)
 
-		wantCode := http.StatusInternalServerError
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
+		CheckStatusCode(t, http.StatusInternalServerError, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("bad json input transfer", func(t *testing.T) {
 		amount := 1000
-
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{ToUser: recieverUser.Username, Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
-
 		body := fmt.Sprintf(`{"to_user"=%q,"amount"=%v, "note"=%q, "category"=%q}`, input.ToUser, input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
-		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
+		claims := SetupAuthUser(t, db, userAccount1, c)
 
 		result := db.Create(&recieverUser)
 		if result.Error != nil {
@@ -560,28 +458,20 @@ func TestTransferFromWallet(t *testing.T) {
 		}
 
 		h := WalletHandler{DB: db}
-
 		h.TransferFromWallet(c)
 
-		wantCode := http.StatusBadRequest
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
+		CheckStatusCode(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("user does not exist", func(t *testing.T) {
 		amount := 1000
-
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{ToUser: recieverUser.Username, Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
-
 		body := fmt.Sprintf(`{"to_user":%q,"amount":%v, "note":%q, "category":%q}`, "Bob", input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
-		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
+		claims := SetupAuthUser(t, db, userAccount1, c)
 
 		result := db.Create(&recieverUser)
 		if result.Error != nil {
@@ -594,29 +484,20 @@ func TestTransferFromWallet(t *testing.T) {
 		}
 
 		h := WalletHandler{DB: db}
-
 		h.TransferFromWallet(c)
 
-		wantCode := http.StatusNotFound
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
-
+		CheckStatusCode(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("self-transfer", func(t *testing.T) {
 		amount := 1000
-
 		db := SetupTestDB(t)
 
 		input := model.InputTransaction{ToUser: recieverUser.Username, Amount: uint(amount), Note: "I spent it all in one place...", Category: "Food"}
-
 		body := fmt.Sprintf(`{"to_user":%q,"amount":%v, "note":%q, "category":%q}`, userAccount1["username"], input.Amount, input.Note, input.Category)
 
 		c, recorder := SetupTestRequest("/wallet", body, http.MethodPost, nil)
-		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
+		claims := SetupAuthUser(t, db, userAccount1, c)
 
 		result := db.Create(&recieverUser)
 		if result.Error != nil {
@@ -629,24 +510,20 @@ func TestTransferFromWallet(t *testing.T) {
 		}
 
 		h := WalletHandler{DB: db}
-
 		h.TransferFromWallet(c)
 
-		wantCode := http.StatusUnprocessableEntity
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
-
+		CheckStatusCode(t, http.StatusUnprocessableEntity, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("A transfers to B while B transfers to A (race condition)", func(t *testing.T) {
-
 		requestNum := 100
 		depositNum := 100
 		amount := requestNum * depositNum
 
 		db := SetupTestPostgresDB(t)
 
+		// two separate users, claims reused across many goroutines — no single context
+		// to hand to SetupAuthUser, same reasoning as the other race tests
 		token1 := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
 		claims1, _ := auth.ValidateJWT(token1)
 
@@ -684,10 +561,7 @@ func TestTransferFromWallet(t *testing.T) {
 					<-start
 					h.TransferFromWallet(c)
 
-					wantCode := http.StatusOK
-					if recorder.Code != wantCode {
-						t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-					}
+					CheckStatusCode(t, http.StatusOK, recorder.Code, recorder.Body.String())
 				} else {
 					defer wg.Done()
 
@@ -698,10 +572,7 @@ func TestTransferFromWallet(t *testing.T) {
 					<-start
 					h.TransferFromWallet(c)
 
-					wantCode := http.StatusOK
-					if recorder.Code != wantCode {
-						t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-					}
+					CheckStatusCode(t, http.StatusOK, recorder.Code, recorder.Body.String())
 				}
 			}(i)
 		}
@@ -709,15 +580,13 @@ func TestTransferFromWallet(t *testing.T) {
 		close(start)
 		wg.Wait()
 
-		wantBalance := 1000
-
 		var recieverWallet model.Wallet
 		result = db.Where("user_id = ?", claims2.UserID).First(&recieverWallet)
 		if result.Error != nil {
 			t.Fatalf("couldn't retrieve reciever wallet: got err = %v", result.Error)
 		}
 
-		wantBalance = amount
+		wantBalance := amount
 		if recieverWallet.Balance != wantBalance {
 			t.Errorf("reciever got %v, wanted %v", recieverWallet.Balance, wantBalance)
 		}
@@ -728,11 +597,8 @@ func TestTransferFromWallet(t *testing.T) {
 		var takerWallet model.Wallet
 		db.Where("user_id = ?", claims2.UserID).First(&takerWallet)
 
-		var giverWalletID uint
-		giverWalletID = giverWallet.ID
-
-		var takerWalletID uint
-		takerWalletID = takerWallet.ID
+		giverWalletID := giverWallet.ID
+		takerWalletID := takerWallet.ID
 
 		var giverTransactionCount int64
 		var takerTransactionCount int64
@@ -758,22 +624,17 @@ func TestTransferFromWallet(t *testing.T) {
 func TestGetUserWallet(t *testing.T) {
 	userAccount1 := map[string]string{"username": "Hareedy", "password": "12345678", "role": "admin"}
 	userAccount2 := map[string]string{"username": "Adam", "password": "12345678", "role": "user"}
+
 	t.Run("successful retrieval", func(t *testing.T) {
 		db := SetupTestDB(t)
 
 		c, recorder := SetupTestRequest("/wallet", "", http.MethodGet, nil)
-		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
+		SetupAuthUser(t, db, userAccount1, c)
 
 		h := WalletHandler{DB: db}
-
 		h.GetUserWallet(c)
 
-		wantCode := http.StatusOK
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
+		CheckStatusCode(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("missing claims", func(t *testing.T) {
@@ -784,10 +645,7 @@ func TestGetUserWallet(t *testing.T) {
 		h := WalletHandler{DB: db}
 		h.GetUserWallet(c)
 
-		wantCode := http.StatusUnauthorized
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
+		CheckStatusCode(t, http.StatusUnauthorized, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("invalid claims", func(t *testing.T) {
@@ -797,13 +655,9 @@ func TestGetUserWallet(t *testing.T) {
 		c.Set("claims", 1234)
 
 		h := WalletHandler{DB: db}
-
 		h.GetUserWallet(c)
 
-		wantCode := http.StatusInternalServerError
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
+		CheckStatusCode(t, http.StatusInternalServerError, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("successful admin retrieval for another id", func(t *testing.T) {
@@ -811,20 +665,13 @@ func TestGetUserWallet(t *testing.T) {
 		id := 2
 
 		c, recorder := SetupTestRequest(fmt.Sprintf("/wallet?id=%v", id), "", http.MethodGet, nil)
-		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
+		SetupAuthUser(t, db, userAccount1, c)
 		_ = SetupTestUser(t, db, userAccount2["username"], userAccount2["password"], userAccount2["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
 
 		h := WalletHandler{DB: db}
-
 		h.GetUserWallet(c)
 
-		wantCode := http.StatusOK
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
-
+		CheckStatusCode(t, http.StatusOK, recorder.Code, recorder.Body.String())
 		CompareWalletsUserID(t, recorder.Body.Bytes(), id)
 	})
 
@@ -832,39 +679,25 @@ func TestGetUserWallet(t *testing.T) {
 		db := SetupTestDB(t)
 
 		c, recorder := SetupTestRequest(fmt.Sprintf("/wallet?id=%v", "two"), "", http.MethodGet, nil)
-		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
+		SetupAuthUser(t, db, userAccount1, c)
 		_ = SetupTestUser(t, db, userAccount2["username"], userAccount2["password"], userAccount2["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
 
 		h := WalletHandler{DB: db}
-
 		h.GetUserWallet(c)
 
-		wantCode := http.StatusBadRequest
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
-
+		CheckStatusCode(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
 	})
 
 	t.Run("id doesn't exist for admin retrieval", func(t *testing.T) {
 		db := SetupTestDB(t)
 
 		c, recorder := SetupTestRequest(fmt.Sprintf("/wallet?id=%v", 999), "", http.MethodGet, nil)
-		token := SetupTestUser(t, db, userAccount1["username"], userAccount1["password"], userAccount1["role"])
+		SetupAuthUser(t, db, userAccount1, c)
 		_ = SetupTestUser(t, db, userAccount2["username"], userAccount2["password"], userAccount2["role"])
-		claims, _ := auth.ValidateJWT(token)
-		c.Set("claims", claims)
 
 		h := WalletHandler{DB: db}
-
 		h.GetUserWallet(c)
 
-		wantCode := http.StatusNotFound
-		if recorder.Code != wantCode {
-			t.Errorf("got code = %v, wanted %v - err = %v", recorder.Code, wantCode, recorder.Body)
-		}
-
+		CheckStatusCode(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
 	})
 }

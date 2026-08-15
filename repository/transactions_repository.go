@@ -24,7 +24,7 @@ func RetrieveTransactions(db *gorm.DB, claims *auth.Claims, page, limit int, fro
 	}
 
 	if to != nil {
-		db = db.Where("created_at <= ?", to)
+		db = db.Where("created_at < ?", to)
 	}
 
 	if category != nil {
@@ -40,7 +40,7 @@ func RetrieveTransactions(db *gorm.DB, claims *auth.Claims, page, limit int, fro
 		offset = 0
 	}
 
-	result := db.Offset(offset).Limit(limit).Find(foundTransactions)
+	result := db.Offset(offset).Limit(limit).Order("created_at ASC").Find(foundTransactions)
 	if result.Error != nil {
 		return result.Error
 	}

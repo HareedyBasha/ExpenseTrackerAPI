@@ -28,22 +28,24 @@ func (h *TransactionHandler) GetAllTransactions(c *gin.Context) {
 
 	if c.Query("page") == "" {
 		page = 1
+	} else {
+		page, err = strconv.Atoi(c.Query("page"))
+		if err != nil {
+			response.RespondError(c, http.StatusBadRequest, gin.H{"couldn't parse page": err})
+			return
+		}
+
 	}
 
 	if c.Query("limit") == "" {
 		limit = 20
-	}
+	} else {
+		limit, err = strconv.Atoi(c.Query("limit"))
+		if err != nil {
+			response.RespondError(c, http.StatusBadRequest, gin.H{"couldn't parse limit": err})
+			return
+		}
 
-	page, err = strconv.Atoi(c.Query("page"))
-	if err != nil {
-		response.RespondError(c, http.StatusBadRequest, gin.H{"couldn't parse page": err})
-		return
-	}
-
-	limit, err = strconv.Atoi(c.Query("limit"))
-	if err != nil {
-		response.RespondError(c, http.StatusBadRequest, gin.H{"couldn't parse limit": err})
-		return
 	}
 
 	if page < 1 {

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -126,6 +128,14 @@ func SetupTestUser(t *testing.T, db *gorm.DB, username, password, role string) (
 	return responseBody["token"]
 }
 
+func SetupAuthUser(t *testing.T, db *gorm.DB, userAccount map[string]string, c *gin.Context) (claims *auth.Claims) {
+	t.Helper()
+	token := SetupTestUser(t, db, userAccount["username"], userAccount["password"], userAccount["role"])
+	claims, _ = auth.ValidateJWT(token)
+	c.Set("claims", claims)
+	return
+}
+
 func SetClaims(c *gin.Context, token string) {
 	authHeader := fmt.Sprintf("Bearer %v", token)
 	c.Request.Header.Set("Authorization", authHeader)
@@ -167,6 +177,15 @@ func CompareWalletsUserID(t *testing.T, gotWalletBytes []byte, wantUserID int) {
 
 }
 
+func mustParse(t *testing.T, value string) time.Time {
+	t.Helper()
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		t.Fatalf("failed to parse time %q: got err = %v", value, err)
+	}
+	return parsed
+}
+
 func TransactionsCheck(t *testing.T, db *gorm.DB, wantTransaction model.Transaction, gotTransactionID int) {
 	t.Helper()
 	var gotTransaction model.Transaction
@@ -201,4 +220,126 @@ func TransactionsCheck(t *testing.T, db *gorm.DB, wantTransaction model.Transact
 			t.Errorf("got related_wallet_id = %v, wanted %v", gotTransaction.RelatedWalletID, wantTransaction.RelatedWalletID)
 		}
 	}
+}
+
+func SeedTransactions(t *testing.T, db *gorm.DB, walletID uint, transactions []model.Transaction) (ids []uint) {
+	t.Helper()
+
+	for _, transaction := range transactions {
+		transaction.WalletID = walletID
+		wantCreatedAt := transaction.CreatedAt
+		result := db.Create(&transaction)
+		if result.Error != nil {
+			t.Fatalf("failed to create transaction: got err = %v", result.Error)
+		}
+
+		result = db.Model(&transaction).Update("created_at", wantCreatedAt)
+		if result.Error != nil {
+			t.Fatalf("failed to create transaction: got err = %v", result.Error)
+		}
+
+		ids = append(ids, transaction.ID)
+	}
+
+	return
+}
+
+func CompareTransactions(t *testing.T, db *gorm.DB, gotTransactionsBytes []byte, wantIDs []uint) {
+	t.Helper()
+
+	var gotTransactions []model.Transaction
+
+	err := json.Unmarshal(gotTransactionsBytes, &gotTransactions)
+	if err != nil {
+		t.Fatalf("failed to unmarshal transactions body: got err = %v", err)
+	}
+
+	if len(gotTransactions) != len(wantIDs) {
+		t.Fatalf("got %v transaction(s), wanted %v", len(gotTransactions), len(wantIDs))
+	}
+	for i, gotTransaction := range gotTransactions {
+		if gotTransaction.ID != wantIDs[i] {
+			t.Errorf("position %v: got id = %v, wanted %v", i, gotTransaction.ID, wantIDs[i])
+			TransactionsCheck(t, db, gotTransaction, int(wantIDs[i]))
+		}
+	}
+}
+
+func CheckStatusCode(t *testing.T, wantCode, gotCode int, gotBody string) {
+	if gotCode != wantCode {
+		t.Errorf("got code = %v, wanted %v: err = %v", gotCode, wantCode, gotBody)
+	}
+}
+
+type Filter struct {
+	Category *string
+	From     *time.Time
+	To       *time.Time
+	Page     *int
+	Limit    *int
+}
+
+func ExpectedIDs(seedIDs []uint, seedData []model.Transaction, filter Filter) []uint {
+
+	var matches []uint
+
+	for i, tx := range seedData {
+		if filter.Category != nil && tx.Category != *filter.Category {
+			continue
+		}
+		if filter.From != nil && tx.CreatedAt.Before(*filter.From) {
+			continue
+		}
+		if filter.To != nil && tx.CreatedAt.After(*filter.To) {
+			continue
+		}
+		matches = append(matches, seedIDs[i])
+	}
+
+	if filter.Page == nil {
+		page := 1
+		filter.Page = &page
+	}
+
+	if filter.Limit == nil {
+		limit := 20
+		filter.Limit = &limit
+	}
+
+	low := (*(filter.Page) - 1) * *(filter.Limit)
+	high := low + *(filter.Limit)
+
+	if low > len(matches) {
+		low = len(matches)
+	}
+	if high > len(matches) {
+		high = len(matches)
+	}
+
+	matches = matches[low:high]
+
+	return matches
+}
+
+func BuildQueryString(filter Filter) string {
+	values := url.Values{}
+	if filter.Page != nil {
+		values.Set("page", strconv.Itoa(*filter.Page))
+	}
+	if filter.Limit != nil {
+		values.Set("limit", strconv.Itoa(*filter.Limit))
+	}
+	if filter.Category != nil {
+		values.Set("category", *filter.Category)
+	}
+	if filter.From != nil {
+		values.Set("from", filter.From.Format(time.RFC3339))
+	}
+	if filter.To != nil {
+		values.Set("to", filter.To.Format(time.RFC3339))
+	}
+	if len(values) == 0 {
+		return ""
+	}
+	return "?" + values.Encode()
 }
