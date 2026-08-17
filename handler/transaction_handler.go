@@ -17,6 +17,21 @@ type TransactionHandler struct {
 	DB *gorm.DB
 }
 
+// @Summary Retrieves user's transactions
+// @Description Shows user's transactions with optional filters like category and from and to dates, where the displayed amount is determined by page and limit
+// @Tags transaction
+// @Produce json
+// @Param page query int false "Which page of the transactions list to show"
+// @Param limit query int false "How many transactions to show in each page"
+// @Param category query string false "Which category of transactions to show (case-insensitive)"
+// @Param from query string false "Which date to start showing transactions after in RFC3339"
+// @Param to query string false "Which date to start showing transactions before in RFC3339"
+// @Success 200 {array}  model.Transaction
+// @Failure 400 {object} dto.Error400 "failed to parse a query param"
+// @Failure 401 {object} dto.Error401 "invalid authorization"
+// @Failure 500 {object} dto.Error500 "failed to correctly query the database or parse claims"
+// @Security BearerAuth
+// @Router /transactions [get]
 func (h *TransactionHandler) GetAllTransactions(c *gin.Context) {
 	claims, err, statusCode := claimsChecks(c)
 	if err != nil {
@@ -94,17 +109,33 @@ func (h *TransactionHandler) GetAllTransactions(c *gin.Context) {
 	response.RespondOK(c, foundTransactions)
 }
 
+type CategorySummary struct {
+	Category string `json:"category"`
+	Total    int    `json:"total"`
+	Count    int    `json:"count"`
+}
+
+type SummaryResult struct {
+	Period     string            `json:"period" example:"2026-08"`
+	Total      int               `json:"total" example:"20000"`
+	Categories []CategorySummary `json:"categories"`
+}
+
+// @Summary Retrieves a summary of user's transactions
+// @Description Shows user's transactions grouped by category and formatted to be concise and nice to read
+// @Tags transaction
+// @Produce json
+// @Success 200 {object}  SummaryResult
+// @Failure 400 {object} dto.Error400 "failed to parse a query param"
+// @Failure 401 {object} dto.Error401 "invalid authorization"
+// @Failure 500 {object} dto.Error500 "failed to correctly query the database or parse claims"
+// @Security BearerAuth
+// @Router /transactions/summary [get]
 func (h *TransactionHandler) GetTransactionSummary(c *gin.Context) {
 	claims, err, statusCode := claimsChecks(c)
 	if err != nil {
 		response.RespondError(c, statusCode, err)
 		return
-	}
-
-	type CategorySummary struct {
-		Category string
-		Total    int
-		Count    int
 	}
 
 	now := time.Now()
@@ -123,12 +154,6 @@ func (h *TransactionHandler) GetTransactionSummary(c *gin.Context) {
 	if result.Error != nil {
 		response.RespondError(c, http.StatusInternalServerError, result.Error)
 		return
-	}
-
-	type SummaryResult struct {
-		Period     string            `json:"period"`
-		Total      int               `json:"total"`
-		Categories []CategorySummary `json:"categories"`
 	}
 
 	var total int

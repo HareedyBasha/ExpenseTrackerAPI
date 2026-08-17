@@ -3,11 +3,13 @@ package handler
 import (
 	"errors"
 	"expense_tracker/auth"
+	"expense_tracker/dto"
 	"expense_tracker/model"
 	"expense_tracker/response"
 	"expense_tracker/service"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -36,6 +38,18 @@ func claimsChecks(c *gin.Context) (claims *auth.Claims, err error, statusCode in
 	return
 }
 
+// @Summary Deposit funds to wallet
+// @Description Takes inputted amount and adds it to wallet's balance
+// @Tags wallet
+// @Accept json
+// @Produce json
+// @Param request body dto.DepositRequest true "Deposit payload"
+// @Success 200 {object}  dto.Wallet200Response
+// @Failure 400 {object} dto.Error400 "invalid request body"
+// @Failure 401 {object} dto.Error401 "invalid authorization header"
+// @Failure 500 {object} dto.Error500 "failed to correctly query the database or parse claims"
+// @Security BearerAuth
+// @Router /wallet/deposit [post]
 func (h *WalletHandler) DepositToWallet(c *gin.Context) {
 	claims, err, statusCode := claimsChecks(c)
 	if err != nil {
@@ -43,9 +57,14 @@ func (h *WalletHandler) DepositToWallet(c *gin.Context) {
 		return
 	}
 
-	input := model.InputTransaction{}
+	input := dto.DepositRequest{}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.RespondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	if input.Amount == 0 {
+		response.RespondError(c, http.StatusBadRequest, "amount cannot be zero")
 		return
 	}
 
@@ -83,9 +102,23 @@ func (h *WalletHandler) DepositToWallet(c *gin.Context) {
 		return
 	}
 
-	response.RespondOK(c, gin.H{"user_id": wallet.UserID, "balance": wallet.Balance})
+	walletResponse := dto.Wallet200Response{Balance: wallet.Balance, UserID: wallet.UserID}
+	response.RespondOK(c, walletResponse)
 }
 
+// @Summary Withdraws funds from wallet
+// @Description Takes inputted amount and subtracts it from wallet's balance
+// @Tags wallet
+// @Accept json
+// @Produce json
+// @Param request body dto.WithdrawRequest true "Withdraw payload"
+// @Success 200 {object}  dto.Wallet200Response
+// @Failure 400 {object} dto.Error400 "invalid request body"
+// @Failure 401 {object} dto.Error401 "invalid authorization header"
+// @Failure 422 {object} dto.Error422Withdraw "not enough balance to withdraw"
+// @Failure 500 {object} dto.Error500 "failed to correctly query the database or parse claims"
+// @Security BearerAuth
+// @Router /wallet/withdraw [post]
 func (h *WalletHandler) WithdrawFromWallet(c *gin.Context) {
 	claims, err, statusCode := claimsChecks(c)
 	if err != nil {
@@ -93,9 +126,14 @@ func (h *WalletHandler) WithdrawFromWallet(c *gin.Context) {
 		return
 	}
 
-	input := model.InputTransaction{}
+	input := dto.WithdrawRequest{}
 	if err = c.ShouldBindJSON(&input); err != nil {
 		response.RespondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	if input.Amount == 0 {
+		response.RespondError(c, http.StatusBadRequest, "amount cannot be zero")
 		return
 	}
 
@@ -141,9 +179,24 @@ func (h *WalletHandler) WithdrawFromWallet(c *gin.Context) {
 		return
 	}
 
-	response.RespondOK(c, gin.H{"user_id": wallet.UserID, "balance": wallet.Balance})
+	walletResponse := dto.Wallet200Response{Balance: wallet.Balance, UserID: wallet.UserID}
+	response.RespondOK(c, walletResponse)
 }
 
+// @Summary Transfers funds between users
+// @Description Takes inputted amount from user's wallet and transfers it to another user's wallet
+// @Tags wallet
+// @Accept json
+// @Produce json
+// @Param request body dto.TransferRequest true "Transfer payload"
+// @Success 200 {object}  dto.Wallet200Response
+// @Failure 400 {object} dto.Error400 "invalid request body"
+// @Failure 401 {object} dto.Error401 "invalid authorization header"
+// @Failure 404 {object} dto.Error404 "inputted username not found in database"
+// @Failure 422 {object} dto.Error422Transfer "cannot transfer to self"
+// @Failure 500 {object} dto.Error500 "failed to correctly query the database or parse claims"
+// @Security BearerAuth
+// @Router /wallet/transfer [post]
 func (h *WalletHandler) TransferFromWallet(c *gin.Context) {
 	claims, err, statusCode := claimsChecks(c)
 	if err != nil {
@@ -151,9 +204,19 @@ func (h *WalletHandler) TransferFromWallet(c *gin.Context) {
 		return
 	}
 
-	input := model.InputTransaction{}
+	input := dto.TransferRequest{}
 	if err = c.ShouldBindJSON(&input); err != nil {
 		response.RespondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	if input.Amount == 0 {
+		response.RespondError(c, http.StatusBadRequest, "amount cannot be zero")
+		return
+	}
+
+	if strings.TrimSpace(input.ToUser) == "" {
+		response.RespondError(c, http.StatusBadRequest, "to_user cannot be empty")
 		return
 	}
 
@@ -247,9 +310,23 @@ func (h *WalletHandler) TransferFromWallet(c *gin.Context) {
 		return
 	}
 
-	response.RespondOK(c, gin.H{"user_id": giverWallet.UserID, "balance": giverWallet.Balance})
+	walletResponse := dto.Wallet200Response{Balance: uint(giverWallet.Balance), UserID: giverWallet.UserID}
+	response.RespondOK(c, walletResponse)
 }
 
+// @Summary Retrieves user's wallet info
+// @Description Shows user's wallet's balance and user id or another user's wallet if the issuer is an admin and inputs an id as a query parameter
+// @Tags wallet
+// @Produce json
+// @Param id query int false "User's id if admin wants to query another user's wallet"
+// @Success 200 {object}  dto.Wallet200Response
+// @Failure 400 {object} dto.Error400 "invalid request body"
+// @Failure 401 {object} dto.Error401 "invalid authorization"
+// @Failure 403 {object} dto.Error403 "user not authorized to view this wallet"
+// @Failure 404 {object} dto.Error404 "inputted username not found in database"
+// @Failure 500 {object} dto.Error500 "failed to correctly query the database or parse claims"
+// @Security BearerAuth
+// @Router /wallet [get]
 func (h *WalletHandler) GetUserWallet(c *gin.Context) {
 	claims, err, statusCode := claimsChecks(c)
 	if err != nil {
@@ -267,7 +344,7 @@ func (h *WalletHandler) GetUserWallet(c *gin.Context) {
 			return
 		}
 		if !auth.IsAdmin(claims) && uint(idValue) != claims.UserID {
-			response.RespondError(c, http.StatusForbidden, "not authorized to view this wallet")
+			response.RespondError(c, http.StatusForbidden, "user not authorized to view this wallet")
 			return
 		}
 		idValueUint := uint(idValue)
@@ -285,5 +362,6 @@ func (h *WalletHandler) GetUserWallet(c *gin.Context) {
 		return
 	}
 
-	response.RespondOK(c, gin.H{"user_id": wallet.UserID, "balance": wallet.Balance})
+	walletResponse := dto.Wallet200Response{Balance: wallet.Balance, UserID: wallet.UserID}
+	response.RespondOK(c, walletResponse)
 }

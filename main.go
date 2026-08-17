@@ -1,3 +1,14 @@
+// @title           ExpenseTracker API
+// @version         1.0
+// @description     REST API for wallet and transaction management with JWT auth and RBAC.
+
+// @host            localhost:8080
+
+// @securityDefinitions.apikey  BearerAuth
+// @in                          header
+// @name                        Authorization
+// @description                 Type "Bearer" followed by a space and your JWT.
+
 package main
 
 import (
@@ -7,8 +18,13 @@ import (
 	"expense_tracker/model"
 	"os"
 
+	_ "expense_tracker/docs" // triggers docs init()
+
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 func main() {
@@ -19,6 +35,9 @@ func main() {
 
 	// Create Router
 	r := gin.Default()
+
+	// Create swagger doc endpoint
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// Connect to database if it exists, else create the database then connect to it
 	db, err := database.ConnectAndMigrateDatabase()

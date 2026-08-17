@@ -143,7 +143,7 @@ func SetClaims(c *gin.Context, token string) {
 	authFunc(c)
 }
 
-func CompareWalletsBalance(t *testing.T, gotWalletBytes []byte, wantBalance int) {
+func CompareWalletsBalance(t *testing.T, gotWalletBytes []byte, wantBalance uint) {
 	t.Helper()
 	var gotWallet model.Wallet
 
